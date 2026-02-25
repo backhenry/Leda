@@ -82,13 +82,13 @@ function init() {
   renderFavorites();
   registerServiceWorker();
 
-  // Tentar buscar novas receitas da Planilha
-  fetchRecipes().finally(() => {
-    // Esconder splash screen com suavidade
-    setTimeout(() => {
-      elements.splashScreen.classList.add('hidden');
-    }, 1200);
-  });
+  // Esconder splash screen com suavidade imediatamente
+  setTimeout(() => {
+    elements.splashScreen.classList.add('hidden');
+  }, 1200);
+
+  // Tentar buscar novas receitas da Planilha em background
+  fetchRecipes();
 }
 
 // Buscar da Planilha do Google (Formato CSV)
