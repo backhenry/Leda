@@ -45,7 +45,8 @@ const state = {
   currentTab: 'receitas',
   currentCategory: 'all',
   searchQuery: '',
-  favorites: JSON.parse(localStorage.getItem('vovoleda_favorites')) || []
+  favorites: JSON.parse(localStorage.getItem('vovoleda_favorites')) || [],
+  currentFontSize: 100
 };
 
 // Receitas Locais / Fallback (caso o usuário não coloque o link ou esteja offline sem cache)
@@ -227,24 +228,16 @@ function setupEventListeners() {
     }
   });
 
-  // Tamanho do Texto A+ A-
+  // Tamanho do Texto A+ A- (Escala infinita)
   elements.btnTextPlus.addEventListener('click', () => {
-    const html = document.documentElement;
-    if (!html.classList.contains('font-large') && !html.classList.contains('font-xlarge')) {
-      html.classList.add('font-large');
-    } else if (html.classList.contains('font-large')) {
-      html.classList.remove('font-large');
-      html.classList.add('font-xlarge');
-    }
+    state.currentFontSize += 10;
+    document.documentElement.style.fontSize = `${state.currentFontSize}%`;
   });
 
   elements.btnTextMinus.addEventListener('click', () => {
-    const html = document.documentElement;
-    if (html.classList.contains('font-xlarge')) {
-      html.classList.remove('font-xlarge');
-      html.classList.add('font-large');
-    } else if (html.classList.contains('font-large')) {
-      html.classList.remove('font-large');
+    if (state.currentFontSize > 80) { // Limite mínimo para não sumir
+      state.currentFontSize -= 10;
+      document.documentElement.style.fontSize = `${state.currentFontSize}%`;
     }
   });
 
