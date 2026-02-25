@@ -371,7 +371,8 @@ function openModal(id) {
     if (line.endsWith(':') || /massa:|recheio:|cobertura:/i.test(line)) {
       return `<div class="ingredient-subsection">${line}</div>`;
     }
-    return `<div class="ingredient-item">${line}</div>`;
+    const cleanLine = line.replace(/^[\-\*•\s]+/, '');
+    return `<div class="ingredient-item">${cleanLine}</div>`;
   }).join('');
   elements.modalIngredients.innerHTML = ingredientsHtml || '<div class="ingredient-item">-</div>';
 
