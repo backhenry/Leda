@@ -97,7 +97,8 @@ async function fetchRecipes() {
   if (SHEET_URL.includes('COLE_AQUI')) return;
 
   try {
-    const response = await fetch(SHEET_URL, { cache: "no-store" });
+    const fetchUrl = SHEET_URL.includes('?') ? `${SHEET_URL}&_t=${new Date().getTime()}` : `${SHEET_URL}?_t=${new Date().getTime()}`;
+    const response = await fetch(fetchUrl, { cache: "no-store" });
     if (!response.ok) throw new Error('Falha ao baixar planilha');
 
     const csvText = await response.text();
@@ -110,7 +111,7 @@ async function fetchRecipes() {
     const newRecipes = [];
 
     for (let i = 1; i < rows.length; i++) {
-      if (rows[i].length < Math.min(4, headers.length)) continue; // Pula linhas vazias
+      if (!rows[i] || rows[i].join('').trim() === '') continue; // Pula linhas vazias
 
       const recipe = {};
       headers.forEach((header, index) => {
