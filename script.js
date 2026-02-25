@@ -1,12 +1,15 @@
-// Application State
-const state = {
-  currentTab: 'receitas',
-  currentCategory: 'all',
-  searchQuery: '',
-  favorites: JSON.parse(localStorage.getItem('vovoleda_favorites')) || []
-};
+// ==========================================
+// CONFIGURAÇÃO DA PLANILHA DO GOOGLE SHEETS
+// ==========================================
+// Para pegar o link: 
+// 1. Abra sua planilha do Google
+// 2. Vá em Arquivo > Compartilhar > Publicar na Web
+// 3. Escolha a aba da sua planilha, e mude "Página da Web" para "Valores separados por vírgula (.csv)"
+// 4. Copie o link e cole na variável abaixo dentro das aspas!
+const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vQ3QZTvHES50bme4Rb92wb7yELFXUn0dQ5eczGB4aXHEwtiO0I505g4QBhr_hei08NZP8b4muYpKenZ/pub?output=csv';
 
-// DOM Elements
+
+// Elementos DOM
 const elements = {
   tabs: document.querySelectorAll('.nav-tab'),
   pages: document.querySelectorAll('.tab-page'),
@@ -37,12 +40,41 @@ const elements = {
   modalPreparo: document.getElementById('detailPreparo')
 };
 
-// Currently viewed recipe ID
+// Application State
+const state = {
+  currentTab: 'receitas',
+  currentCategory: 'all',
+  searchQuery: '',
+  favorites: JSON.parse(localStorage.getItem('vovoleda_favorites')) || []
+};
+
+// Receitas Locais / Fallback (caso o usuário não coloque o link ou esteja offline sem cache)
+const defaultRecipes = [
+  {
+    id: "r1", nome: "Bolo de Requeijão",
+    ingrediente: "3 ovos\n1 copo de requeijão (250g)\n2 xícaras de chá de açúcar\n1/2 xícara de chá de óleo\n1 pacote de coco ralado (100gr)\n2 xícaras de chá de farinha de trigo\n1 colher de sopa de fermento em pó",
+    preparo: "Em uma batedeira, bata todos os ingredientes até incorporar bem.\nPasse para uma forma de furo central untada e enfarinhada e leve ao forno pré-aquecido em temperatura média por cerca de 40 minutos.\nEspere amornar e desenforme.",
+    sabor: "d"
+  },
+  {
+    id: "r2", nome: "Quibe Assado",
+    ingrediente: "800g de carne moída\n500g de trigo para quibe\n3 dentes de alhos amassados\n2 cebolas picadinhas\n1 a 2 tomates picados sem sementes\nCebolinha e cheiro verde a gosto\nhortelã picadinho a gosto\nSal e pimenta do reino a gosto\n3/4 xícara de azeite",
+    preparo: "Deixar o trigo para quibe de molho por 1 hora em água morna.\nEscorrer muito bem e espremer o trigo.\nMisturar os demais ingredientes.\nEspalhe o quibe em uma forma untada com azeite e jogue por cima um pouco mais de azeite.",
+    sabor: "s"
+  },
+  {
+    id: "r3", nome: "Pudim Prestígio",
+    ingrediente: "Pudim Chocolate:\n1 Leite condensado, creme de leite, leite e chocolate em pó. 1 gelatina incolor.\nPudim Coco:\n1 Leite condensado, creme de leite, leite de coco, coco ralado. 1 gelatina incolor.",
+    preparo: "Bata os ingredientes do pudim de chocolate com a gelatina hidratada e coloque na forma. Gele por 1 hora.\nBata os ingredientes do pudim de coco (exceto o ralado) com a gelatina hidratada, misture o coco e jogue por cima. Gele por 6 horas.",
+    sabor: "d"
+  }
+];
+
+let recipes = JSON.parse(localStorage.getItem('vovoleda_recipes')) || defaultRecipes;
 let currentRecipeId = null;
 
-// Initialize App
+// Inicialização
 function init() {
-  // Sort recipes alphabetically
   recipes.sort((a, b) => a.nome.localeCompare(b.nome));
 
   setupEventListeners();
@@ -50,20 +82,96 @@ function init() {
   renderFavorites();
   registerServiceWorker();
 
-  // Hide splash screen after 1.5 seconds
-  setTimeout(() => {
-    elements.splashScreen.classList.add('hidden');
-  }, 1500);
+  // Tentar buscar novas receitas da Planilha
+  fetchRecipes().finally(() => {
+    // Esconder splash screen com suavidade
+    setTimeout(() => {
+      elements.splashScreen.classList.add('hidden');
+    }, 1200);
+  });
 }
 
-// Setup Event Listeners
+// Buscar da Planilha do Google (Formato CSV)
+async function fetchRecipes() {
+  if (SHEET_URL.includes('COLE_AQUI')) return;
+
+  try {
+    const response = await fetch(SHEET_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error('Falha ao baixar planilha');
+
+    const csvText = await response.text();
+    const rows = parseCSV(csvText);
+
+    // Assumimos que a primeira linha são os títulos (cabeçalhos)
+    if (rows.length < 2) return;
+
+    const headers = rows[0].map(h => h.trim().toLowerCase());
+    const newRecipes = [];
+
+    for (let i = 1; i < rows.length; i++) {
+      if (rows[i].length < Math.min(4, headers.length)) continue; // Pula linhas vazias
+
+      const recipe = {};
+      headers.forEach((header, index) => {
+        if (header && rows[i][index]) {
+          recipe[header] = rows[i][index].trim();
+        }
+      });
+
+      // Gera ID baseado no nome
+      if (recipe.nome) {
+        recipe.id = 'r_' + recipe.nome.toLowerCase().replace(/[^a-z0-9]/g, '');
+        // Garantir que sabor seja uma letra
+        if (recipe.sabor) recipe.sabor = recipe.sabor.toLowerCase().charAt(0);
+        else recipe.sabor = 'd'; // Padrao
+
+        newRecipes.push({
+          id: recipe.id,
+          nome: recipe.nome,
+          ingrediente: recipe.ingrediente || '',
+          preparo: recipe.preparo || '',
+          sabor: recipe.sabor
+        });
+      }
+    }
+
+    if (newRecipes.length > 0) {
+      recipes = newRecipes;
+      recipes.sort((a, b) => a.nome.localeCompare(b.nome));
+      localStorage.setItem('vovoleda_recipes', JSON.stringify(recipes));
+      renderRecipes();
+      renderFavorites();
+    }
+  } catch (error) {
+    console.error('Erro ao processar planilha:', error);
+  }
+}
+
+// Analisador de CSV simples que suporta aspas duplas (usadas em textos com quebra de linha)
+function parseCSV(text) {
+  let p = '', row = [''], ret = [row], i = 0, r = 0, s = !0, l;
+  for (l of text) {
+    if ('"' === l) {
+      if (s && l === p) row[i] += l;
+      s = !s;
+    } else if (',' === l && s) l = row[++i] = '';
+    else if ('\n' === l && s) {
+      if ('\r' === p) row[i] = row[i].slice(0, -1);
+      row = ret[++r] = [l = '']; i = 0;
+    } else row[i] += l;
+    p = l;
+  }
+  return ret;
+}
+
+// Configurar Eventos
 function setupEventListeners() {
-  // Navigation Tabs
+  // Tabs
   elements.tabs.forEach(tab => {
     tab.addEventListener('click', () => switchTab(tab.dataset.tab));
   });
 
-  // Category Filters
+  // Categorias
   elements.chips.forEach(chip => {
     chip.addEventListener('click', () => {
       elements.chips.forEach(c => c.classList.remove('active'));
@@ -73,7 +181,7 @@ function setupEventListeners() {
     });
   });
 
-  // Search
+  // Busca
   elements.searchInput.addEventListener('input', (e) => {
     state.searchQuery = e.target.value.toLowerCase();
     elements.clearSearchBtn.classList.toggle('visible', state.searchQuery.length > 0);
@@ -88,41 +196,38 @@ function setupEventListeners() {
     renderRecipes();
   });
 
-  // Modal Actions
+  // Modal Botoes
   elements.modalBackBtn.addEventListener('click', closeModal);
 
   elements.modalFavBtn.addEventListener('click', () => {
     if (currentRecipeId) {
       toggleFavorite(currentRecipeId);
       updateModalFavoriteState(currentRecipeId);
-      // Re-render grids to reflect changes
       renderRecipes();
       renderFavorites();
     }
   });
 
-  // Web Share API
+  // Compartilhar Nativo Web API
   elements.modalShareBtn.addEventListener('click', async () => {
     if (!currentRecipeId) return;
     const recipe = recipes.find(r => r.id === currentRecipeId);
+    if (!recipe) return;
 
     if (navigator.share) {
       try {
         await navigator.share({
           title: `Receita de ${recipe.nome}`,
           text: `Olha essa receita deliciosa de ${recipe.nome} da Vovó Leda!`,
-          url: window.location.href, // Sharing the current app URL
+          url: window.location.href,
         });
-      } catch (err) {
-        console.log('Error sharing:', err);
-      }
+      } catch (err) { }
     } else {
-      // Fallback if Web Share is not supported
-      alert(`Para compartilhar, copie o link desta página.\nReceita: ${recipe.nome}`);
+      alert(`Compartilhamento não suportado neste navegador. Copie o link principal.\n\nReceita: ${recipe.nome}`);
     }
   });
 
-  // Font Size Resizing
+  // Tamanho do Texto A+ A-
   elements.btnTextPlus.addEventListener('click', () => {
     const html = document.documentElement;
     if (!html.classList.contains('font-large') && !html.classList.contains('font-xlarge')) {
@@ -143,7 +248,7 @@ function setupEventListeners() {
     }
   });
 
-  // Close modal on swipe down (simple implementation)
+  // Fechar modal ao deslizar para baixo
   let touchStartY = 0;
   elements.modal.addEventListener('touchstart', e => {
     touchStartY = e.changedTouches[0].screenY;
@@ -151,37 +256,25 @@ function setupEventListeners() {
 
   elements.modal.addEventListener('touchend', e => {
     const touchEndY = e.changedTouches[0].screenY;
-    // If scrolled down significantly and at the top of the modal
     if (touchEndY - touchStartY > 100 && elements.modal.querySelector('.detail-body').scrollTop === 0) {
       closeModal();
     }
   }, { passive: true });
 }
 
-// Switch Bottom Tabs
 function switchTab(tabId) {
   state.currentTab = tabId;
-
-  // Update Tab Styling
-  elements.tabs.forEach(tab => {
-    tab.classList.toggle('active', tab.dataset.tab === tabId);
-  });
-
-  // Update Pages
-  elements.pages.forEach(page => {
-    page.classList.toggle('active', page.id === `tab-${tabId}`);
-  });
-
-  // Scroll to top when switching tabs
+  elements.tabs.forEach(tab => tab.classList.toggle('active', tab.dataset.tab === tabId));
+  elements.pages.forEach(page => page.classList.toggle('active', page.id === `tab-${tabId}`));
   window.scrollTo(0, 0);
 }
 
-// Render Recipes to Grid
 function renderRecipes() {
   const filtered = recipes.filter(recipe => {
     const matchesCategory = state.currentCategory === 'all' || recipe.sabor === state.currentCategory;
-    const matchesSearch = recipe.nome.toLowerCase().includes(state.searchQuery) ||
-      recipe.ingrediente.toLowerCase().includes(state.searchQuery);
+    const query = state.searchQuery;
+    const matchesSearch = recipe.nome.toLowerCase().includes(query) ||
+      (recipe.ingrediente && recipe.ingrediente.toLowerCase().includes(query));
     return matchesCategory && matchesSearch;
   });
 
@@ -194,17 +287,12 @@ function renderRecipes() {
     elements.emptyState.classList.add('hidden');
     elements.recipeGrid.innerHTML = filtered.map(recipe => createRecipeCard(recipe)).join('');
 
-    // Add click listeners to new cards
     document.querySelectorAll('#recipeGrid .recipe-card').forEach(card => {
       card.addEventListener('click', (e) => {
-        // Prevent modal open if clicking the favorite button
-        if (!e.target.closest('.card-fav-btn')) {
-          openModal(card.dataset.id);
-        }
+        if (!e.target.closest('.card-fav-btn')) openModal(card.dataset.id);
       });
     });
 
-    // Add click listeners to favorite buttons
     document.querySelectorAll('#recipeGrid .card-fav-btn').forEach(btn => {
       btn.addEventListener('click', (e) => {
         e.stopPropagation();
@@ -216,7 +304,6 @@ function renderRecipes() {
   }
 }
 
-// Render Favorites Grid
 function renderFavorites() {
   const favRecipes = recipes.filter(r => state.favorites.includes(r.id));
 
@@ -227,12 +314,9 @@ function renderFavorites() {
     elements.emptyFavorites.style.display = 'none';
     elements.favoritesGrid.innerHTML = favRecipes.map(recipe => createRecipeCard(recipe)).join('');
 
-    // Add click listeners
     document.querySelectorAll('#favoritesGrid .recipe-card').forEach(card => {
       card.addEventListener('click', (e) => {
-        if (!e.target.closest('.card-fav-btn')) {
-          openModal(card.dataset.id);
-        }
+        if (!e.target.closest('.card-fav-btn')) openModal(card.dataset.id);
       });
     });
 
@@ -241,23 +325,19 @@ function renderFavorites() {
         e.stopPropagation();
         toggleFavorite(btn.dataset.id);
         renderFavorites();
-        renderRecipes(); // Update main grid too
+        renderRecipes();
       });
     });
   }
 }
 
-// Create Recipe Card HTML
 function createRecipeCard(recipe) {
   const isFav = state.favorites.includes(recipe.id);
   const badgeInfo = getBadgeInfo(recipe.sabor);
 
-  // Create a short preview of ingredients
   const preview = recipe.ingrediente
-    .split('\n')
-    .slice(0, 2)
-    .map(line => line.trim().replace(/^[\-\*•\s]*/, ''))
-    .join(', ') + '...';
+    ? recipe.ingrediente.split('\n').slice(0, 2).map(line => line.trim().replace(/^[\-\*•\s]*/, '')).join(', ') + '...'
+    : '';
 
   return `
     <article class="recipe-card" data-id="${recipe.id}">
@@ -276,18 +356,13 @@ function createRecipeCard(recipe) {
   `;
 }
 
-// Toggle Favorite State
 function toggleFavorite(id) {
   const index = state.favorites.indexOf(id);
-  if (index === -1) {
-    state.favorites.push(id);
-  } else {
-    state.favorites.splice(index, 1);
-  }
+  if (index === -1) state.favorites.push(id);
+  else state.favorites.splice(index, 1);
   localStorage.setItem('vovoleda_favorites', JSON.stringify(state.favorites));
 }
 
-// Open Recipe Modal
 function openModal(id) {
   const recipe = recipes.find(r => r.id === id);
   if (!recipe) return;
@@ -295,22 +370,18 @@ function openModal(id) {
   currentRecipeId = id;
   const badgeInfo = getBadgeInfo(recipe.sabor);
 
-  // Populate Modal
   elements.modalTitle.textContent = recipe.nome;
   elements.modalBadge.innerHTML = `<span class="card-badge ${badgeInfo.class}">${badgeInfo.emoji} ${badgeInfo.label}</span>`;
-
   updateModalFavoriteState(id);
 
-  // Format Ingredients
   const ingredientsHtml = parseLines(recipe.ingrediente).map(line => {
-    if (line.endsWith(':') || line.toLowerCase().includes('massa:') || line.toLowerCase().includes('recheio:') || line.toLowerCase().includes('cobertura:')) {
+    if (line.endsWith(':') || /massa:|recheio:|cobertura:/i.test(line)) {
       return `<div class="ingredient-subsection">${line}</div>`;
     }
     return `<div class="ingredient-item">${line}</div>`;
   }).join('');
-  elements.modalIngredients.innerHTML = ingredientsHtml;
+  elements.modalIngredients.innerHTML = ingredientsHtml || '<div class="ingredient-item">-</div>';
 
-  // Format Preparo
   const preparoHtml = parseLines(recipe.preparo).map(line => {
     if (line.toLowerCase().startsWith('dica:')) {
       return `<div class="preparo-dica"><strong>Dica:</strong> ${line.substring(5).trim()}</div>`;
@@ -319,21 +390,17 @@ function openModal(id) {
     }
     return `<p class="preparo-paragraph">${line}</p>`;
   }).join('');
-  elements.modalPreparo.innerHTML = preparoHtml;
+  elements.modalPreparo.innerHTML = preparoHtml || '<p class="preparo-paragraph">-</p>';
 
-  // Show Modal
-  document.body.style.overflow = 'hidden'; // Prevent background scrolling
+  document.body.style.overflow = 'hidden';
   elements.modal.classList.add('open');
   elements.modal.querySelector('.detail-body').scrollTop = 0;
 }
 
-// Close Recipe Modal
 function closeModal() {
   elements.modal.classList.remove('open');
-  document.body.style.overflow = ''; // Restore background scrolling
-  setTimeout(() => {
-    currentRecipeId = null;
-  }, 350); // Wait for transition
+  document.body.style.overflow = '';
+  setTimeout(() => currentRecipeId = null, 350);
 }
 
 function updateModalFavoriteState(id) {
@@ -341,7 +408,6 @@ function updateModalFavoriteState(id) {
   elements.modalFavBtn.classList.toggle('favorited', isFav);
 }
 
-// Helper Utils
 function getBadgeInfo(sabor) {
   switch (sabor) {
     case 'd': return { label: 'Doce', class: 'badge-doce', emoji: '🍰' };
@@ -353,22 +419,15 @@ function getBadgeInfo(sabor) {
 
 function parseLines(text) {
   if (!text) return [];
-  // Split by newline and remove empty lines
-  return text.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
+  return text.toString().split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 0);
 }
 
-// Service Worker Registration
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('sw.js').then(registration => {
-        console.log('SW registered: ', registration.scope);
-      }).catch(registrationError => {
-        console.log('SW registration failed: ', registrationError);
-      });
+      navigator.serviceWorker.register('sw.js').catch(err => console.log('SW failed: ', err));
     });
   }
 }
 
-// Boot the app
 document.addEventListener('DOMContentLoaded', init);
