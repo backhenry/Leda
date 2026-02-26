@@ -1,9 +1,9 @@
-const CACHE_NAME = 'vovoleda-cache-v5';
+const CACHE_NAME = 'vovoleda-cache-v6';
 const urlsToCache = [
     './',
     './index.html',
     './style.css',
-    './script.js',
+    './script.js?v=2',
     './icon-512.png',
     './vó e vô.jpg',
     './manifest.json',
