@@ -141,8 +141,14 @@ async function fetchRecipes() {
       recipes = newRecipes;
       recipes.sort((a, b) => a.nome.localeCompare(b.nome));
       localStorage.setItem('vovoleda_recipes', JSON.stringify(recipes));
+      // Forced re-render
       renderRecipes();
       renderFavorites();
+
+      // Force reload UI if empty state
+      if (document.getElementById('recipeCount').textContent === "0" && newRecipes.length > 0) {
+        window.location.reload();
+      }
     }
   } catch (error) {
     console.error('Erro ao processar planilha:', error);
